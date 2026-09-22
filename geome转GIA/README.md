@@ -1,5 +1,4 @@
-# 使用的核心项目：
-
+# 使用的核心开源项目：
 https://www.geometrize.co.uk/
 -
 https://www.samcodes.co.uk/project/geometrize-haxe-web/
