@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>对话状态机压缩文件解码转换工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Microsoft YaHei", sans-serif;
+        }
+
+        body {
+            max-width: 600px;
+            margin: 80px auto;
+            padding: 30px;
+            background: #f0f2f5;
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #165DFF;
+            font-size: 22px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 16px;
+        }
+
+            .btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            }
+
+            .btn.btn-var {
+                background: #A265F0;
+            }
+
+                .btn.btn-var:hover {
+                    background: #7649AF;
+                }
+
+            .btn.btn-json {
+                background: #165DFF;
+            }
+
+                .btn.btn-json:hover {
+                    background: #0f4cd1;
+                }
+
+        .tip {
+            margin-top: 20px;
+            padding: 16px;
+            background: #fff;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.8;
+            color: #374151;
+            border-left: 4px solid #165DFF;
+        }
+
+            .tip p {
+                margin-bottom: 6px;
+            }
+    </style>
+</head>
+<body>
+    <h1>📄 状态机对话压缩文件解码转换工具</h1>
+
+    <button class="btn btn-var" onclick="convertCompressedVariables()">
+        📤 转换压缩变量值文件 → 普通导出变量文件
+    </button>
+
+    <button class="btn btn-json" onclick="convertCustomStructJson()">
+        📤 转换结构体JSON压缩文件 → 普通导出变量文件
+    </button>
+
+    <div class="tip">
+        <p></p>
+        <p></p>
+        <p></p>
+        <p></p>
+    </div>
+
+    <input type="file" id="hiddenFileInput" style="display:none" accept=".txt,.json">
+
+    <script>
+        // 标准三位10bit位解码工具函数，从32位整数拆分出三个独立10bit数值
+        function unpack3From10bitPackInt(packInt) {
+            return {
+                v0: packInt & 0x3FF,
+                v1: (packInt >> 10) & 0x3FF,
+                v2: (packInt >> 20) & 0x3FF
+            }
+        }
+
+        // 转换压缩变量值文件到标准普通导出格式
+        function convertCompressedVariables() {
+            var input = document.getElementById('hiddenFileInput');
+            input.accept = '.txt';
+            input.onchange = function (e) {
+                var file = e.target.files[0];
+                if (!file) return;
+                var reader = new FileReader();
+                reader.onload = function (ev) {
+                    var text = ev.target.result;
+                    if (text.charCodeAt(0) === 0xFEFF) text = text.substring(1);
+                    text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                    //var lines = text.split('\n').map(function (l) { return l.trim() }).filter(function (l) { return l !== '' });
+                    var lines = text.split('\n'); // ← 关键：不再 trim，不再 filter//不去空行和空格
+
+                    var eventIdTable = [];
+                    var basePackList = [];
+                    var optBranch2List = [];
+                    var optBranch3List = [];
+                    var idx4PackList = [];
+                    var idx5PackList = [];
+                    var dialogTextList = [];
+                    var optTextTable = [];
+
+                    var currentMark = '';
+                    lines.forEach(function (line) {
+                        if (line.startsWith('[') && line.endsWith(']')) {
+                            currentMark = line;
+                            return;
+                        }
+                        switch (currentMark) {
+                            case '[事件ID表]': eventIdTable.push(Number(line)); break;
+                            case '[基础参数组1]': basePackList.push(Number(line)); break;
+                            case '[选项分支组2]': optBranch2List.push(Number(line)); break;
+                            case '[选项分支组3]': optBranch3List.push(Number(line)); break;
+                            case '[文索引组4]': idx4PackList.push(Number(line)); break;
+                            case '[文索引组5]': idx5PackList.push(Number(line)); break;
+                            case '[序号对话文]': dialogTextList.push(line); break;
+                            case '[选项文本表]': optTextTable.push(line); break;
+                        }
+                    });
+
+                    // 自动判定模式：存在选项分支组3就是6选项模式，否则是3选项模式
+                    var is6OptMode = optBranch3List.length > 0;
+                    var nodeCount = eventIdTable.length;
+
+                    // 解码基础参数组1
+                    var autoBranchList = [];
+                    var endDDList = [];
+                    var stayTimeList = [];
+                    basePackList.forEach(function (packVal) {
+                        var unpack = unpack3From10bitPackInt(packVal);
+                        autoBranchList.push(unpack.v0);
+                        endDDList.push(unpack.v1);
+                        stayTimeList.push(unpack.v2 * 500);
+                    });
+
+                    // 解码选项分支组2
+                    var opt1BranchList = [], opt2BranchList = [], opt3BranchList = [];
+                    optBranch2List.forEach(function (packVal) {
+                        var unpack = unpack3From10bitPackInt(packVal);
+                        opt1BranchList.push(unpack.v0);
+                        opt2BranchList.push(unpack.v1);
+                        opt3BranchList.push(unpack.v2);
+                    });
+
+                    // 初始化4-6分支默认值//原声明nodeCount，但实际不需要
+                    var opt4BranchList = Array(0).fill(0);
+                    var opt5BranchList = Array(0).fill(0);
+                    var opt6BranchList = Array(0).fill(0);
+                    // 6选项模式解码选项分支组3
+                    if (is6OptMode) {
+                        optBranch3List.forEach(function (packVal) {
+                            var unpack = unpack3From10bitPackInt(packVal);
+                            opt4BranchList.push(unpack.v0);
+                            opt5BranchList.push(unpack.v1);
+                            opt6BranchList.push(unpack.v2);
+                        });
+                    }
+
+                    // 解码文索引组4
+                    var idx1List = [], idx2List = [], idx3List = [];
+                    idx4PackList.forEach(function (packVal) {
+                        var unpack = unpack3From10bitPackInt(packVal);
+                        idx1List.push(unpack.v0);
+                        idx2List.push(unpack.v1);
+                        idx3List.push(unpack.v2);
+                    });
+
+                    // 初始化4-6文索引默认值
+                    var idx4List = Array(0).fill(0);
+                    var idx5List = Array(0).fill(0);
+                    var idx6List = Array(0).fill(0);
+                    // 6选项模式解码文索引组5
+                    if (is6OptMode) {
+                        idx5PackList.forEach(function (packVal) {
+                            var unpack = unpack3From10bitPackInt(packVal);
+                            idx4List.push(unpack.v0);
+                            idx5List.push(unpack.v1);
+                            idx6List.push(unpack.v2);
+                        });
+                    }
+
+                    // 按照选项文本表下标映射生成6个选项文本列表
+                    var opt1TxtList = idx1List.map(function (i) { return optTextTable[i] || '' });
+                    var opt2TxtList = idx2List.map(function (i) { return optTextTable[i] || '' });
+                    var opt3TxtList = idx3List.map(function (i) { return optTextTable[i] || '' });
+                    var opt4TxtList = idx4List.map(function (i) { return optTextTable[i] || '' });
+                    var opt5TxtList = idx5List.map(function (i) { return optTextTable[i] || '' });
+                    var opt6TxtList = idx6List.map(function (i) { return optTextTable[i] || '' });
+
+                    // 完全按照原生普通导出顺序生成输出内容，修复遗漏追加out的Bug
+                    var out = '';
+                    out += '[自动分支号]\r\n';
+                    autoBranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                    out += '[选项1分支]\r\n';
+                    opt1BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                    out += '[选项2分支]\r\n';
+                    opt2BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                    out += '[选项3分支]\r\n';
+                    opt3BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                    out += '[选项4分支]\r\n';
+                    opt4BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                    out += '[选项5分支]\r\n';
+                    opt5BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                    out += '[选项6分支]\r\n';
+                    opt6BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                    out += '[走向结束序号]\r\n';
+                    endDDList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                    out += '[序号对话文]\r\n';
+                    dialogTextList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                    out += '[序号选项1文]\r\n';
+                    opt1TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                    out += '[序号选项2文]\r\n';
+                    opt2TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                    out += '[序号选项3文]\r\n';
+                    opt3TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                    out += '[序号选项4文]\r\n';
+                    opt4TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                    out += '[序号选项5文]\r\n';
+                    opt5TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                    out += '[序号选项6文]\r\n';
+                    opt6TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                    out += '[对话停留时]\r\n';
+                    stayTimeList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                    out += '[事件触发ID]\r\n';
+                    eventIdTable.forEach(function (v) { out += ' ' + v + '\r\n' });
+
+                    var blob = new Blob([out], { type: 'text/plain;charset=utf-8' });
+                    var a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = '转换后_' + (is6OptMode ? 6 : 3) + '选项标准变量导出文件.txt';
+                    a.click();
+                    alert('✅ ' + (is6OptMode ? 6 : 3) + '选项压缩变量文件解码成功！已生成标准导出格式文件，可直接导入原编辑器使用');
+                };
+                reader.readAsText(file, 'utf-8');
+                input.value = '';
+            };
+            input.click();
+        }
+
+        // 转换结构体JSON压缩文件到标准普通导出格式
+
+        function convertCustomStructJson() {
+            var input = document.getElementById('hiddenFileInput');
+            input.accept = '.json,.txt';
+            // 先清空之前残留的旧文件记录，避免重复选择同个文件不触发onchange的问题
+            input.value = '';
+            // 绑定文件选择回调逻辑
+            input.onchange = function (e) {
+                var file = e.target.files[0];
+                if (!file) {
+                    // 如果用户取消选择文件，立刻清空输入框避免残留
+                    input.value = '';
+                    return;
+                }
+                var reader = new FileReader();
+                reader.onload = function (ev) {
+                    try {
+                        var jsonData = JSON.parse(ev.target.result);
+                        var valueList = jsonData.value;
+
+                        var eventIdTable = [];
+                        var basePackList = [];
+                        var optBranch2List = [];
+                        var optBranch3List = [];
+                        var idx4PackList = [];
+                        var idx5PackList = [];
+                        var dialogTextList = [];
+                        var optTextTable = [];
+
+                        valueList.forEach(function (item) {
+                            // 非选项文本表列表自动忽略第一个占位元素，取后续所有数值
+                            if (item.key === '事件ID表') {
+                                eventIdTable = item.value.value.slice(1).map(function (v) { return Number(v) });
+                            }
+                            if (item.key === '基础参数组1') {
+                                basePackList = item.value.value.slice(1).map(function (v) { return Number(v) });
+                            }
+                            if (item.key === '选项分支组2') {
+                                optBranch2List = item.value.value.slice(1).map(function (v) { return Number(v) });
+                            }
+                            if (item.key === '选项分支组3') {
+                                optBranch3List = item.value.value.slice(1).map(function (v) { return Number(v) });
+                            }
+                            if (item.key === '文索引组4') {
+                                idx4PackList = item.value.value.slice(1).map(function (v) { return Number(v) });
+                            }
+                            if (item.key === '文索引组5') {
+                                idx5PackList = item.value.value.slice(1).map(function (v) { return Number(v) });
+                            }
+                            if (item.key === '序号对话文') {
+                                dialogTextList = item.value.value.slice(1);
+                            }
+                            // 选项文本表完整保留所有元素，不需要跳过第一个
+                            if (item.key === '选项文本表') {
+                                optTextTable = item.value.value;
+                            }
+                        });
+
+                        // 自动判定模式：存在选项分支组3就是6选项模式，否则是3选项模式
+                        var is6OptMode = optBranch3List.length > 0;
+                        var nodeCount = eventIdTable.length;
+
+                        // 解码基础参数组1
+                        var autoBranchList = [];
+                        var endDDList = [];
+                        var stayTimeList = [];
+                        basePackList.forEach(function (packVal) {
+                            var unpack = unpack3From10bitPackInt(packVal);
+                            autoBranchList.push(unpack.v0);
+                            endDDList.push(unpack.v1);
+                            stayTimeList.push(unpack.v2 * 500);
+                        });
+
+                        // 解码选项分支组2
+                        var opt1BranchList = [], opt2BranchList = [], opt3BranchList = [];
+                        optBranch2List.forEach(function (packVal) {
+                            var unpack = unpack3From10bitPackInt(packVal);
+                            opt1BranchList.push(unpack.v0);
+                            opt2BranchList.push(unpack.v1);
+                            opt3BranchList.push(unpack.v2);
+                        });
+
+                        // 初始化4-6分支默认值//nodeCount
+                        var opt4BranchList = Array(0).fill(0);
+                        var opt5BranchList = Array(0).fill(0);
+                        var opt6BranchList = Array(0).fill(0);
+                        // 6选项模式解码选项分支组3
+                        if (is6OptMode) {
+                            optBranch3List.forEach(function (packVal) {
+                                var unpack = unpack3From10bitPackInt(packVal);
+                                opt4BranchList.push(unpack.v0);
+                                opt5BranchList.push(unpack.v1);
+                                opt6BranchList.push(unpack.v2);
+                            });
+                        }
+
+                        // 解码文索引组4
+                        var idx1List = [], idx2List = [], idx3List = [];
+                        idx4PackList.forEach(function (packVal) {
+                            var unpack = unpack3From10bitPackInt(packVal);
+                            idx1List.push(unpack.v0);
+                            idx2List.push(unpack.v1);
+                            idx3List.push(unpack.v2);
+                        });
+
+                        // 初始化4-6文索引默认值
+                        var idx4List = Array(0).fill(0);
+                        var idx5List = Array(0).fill(0);
+                        var idx6List = Array(0).fill(0);
+                        // 6选项模式解码文索引组5
+                        if (is6OptMode) {
+                            idx5PackList.forEach(function (packVal) {
+                                var unpack = unpack3From10bitPackInt(packVal);
+                                idx4List.push(unpack.v0);
+                                idx5List.push(unpack.v1);
+                                idx6List.push(unpack.v2);
+                            });
+                        }
+
+                        // 按照选项文本表下标映射生成6个选项文本列表
+                        var opt1TxtList = idx1List.map(function (i) { return optTextTable[i] || '' });
+                        var opt2TxtList = idx2List.map(function (i) { return optTextTable[i] || '' });
+                        var opt3TxtList = idx3List.map(function (i) { return optTextTable[i] || '' });
+                        var opt4TxtList = idx4List.map(function (i) { return optTextTable[i] || '' });
+                        var opt5TxtList = idx5List.map(function (i) { return optTextTable[i] || '' });
+                        var opt6TxtList = idx6List.map(function (i) { return optTextTable[i] || '' });
+
+                        // 完全按照原生普通导出顺序生成输出内容，修复遗漏追加out的Bug
+                        var out = '';
+                        out += '[自动分支号]\r\n';
+                        autoBranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                        out += '[选项1分支]\r\n';
+                        opt1BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                        out += '[选项2分支]\r\n';
+                        opt2BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                        out += '[选项3分支]\r\n';
+                        opt3BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                        out += '[选项4分支]\r\n';
+                        opt4BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                        out += '[选项5分支]\r\n';
+                        opt5BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                        out += '[选项6分支]\r\n';
+                        opt6BranchList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                        out += '[走向结束序号]\r\n';
+                        endDDList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                        out += '[序号对话文]\r\n';
+                        dialogTextList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                        out += '[序号选项1文]\r\n';
+                        opt1TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                        out += '[序号选项2文]\r\n';
+                        opt2TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                        out += '[序号选项3文]\r\n';
+                        opt3TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                        out += '[序号选项4文]\r\n';
+                        opt4TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                        out += '[序号选项5文]\r\n';
+                        opt5TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                        out += '[序号选项6文]\r\n';
+                        opt6TxtList.forEach(function (v) { out += (v || ' ') + '\r\n' });
+                        out += '[对话停留时]\r\n';
+                        stayTimeList.forEach(function (v) { out += ' ' + v + '\r\n' });
+                        out += '[事件触发ID]\r\n';
+                        eventIdTable.forEach(function (v) { out += ' ' + v + '\r\n' });
+
+                        var blob = new Blob([out], { type: 'text/plain;charset=utf-8' });
+                        var a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = '转换后_' + jsonData.name.replace('（', '_').replace('）', '') + '_标准变量导出文件.txt';
+                        a.click();
+                        alert('✅ ' + (is6OptMode ? 6 : 3) + '选项结构体JSON解码成功！已生成标准导出格式文件，可直接导入原编辑器使用');
+                    } catch (err) {
+                        alert('文件解析失败：' + err.message + '，请确认选择的是状态机导出的标准JSON压缩结构体文件');
+                        console.error('转换异常详情:', err);
+                    }
+                    // 所有解析、导出逻辑完全执行完毕后，才清空输入框内容
+                    input.value = '';
+                };
+                reader.readAsText(file, 'utf-8');
+            };
+            // 全部回调逻辑绑定完成后，最后执行弹出文件选择框
+            input.click();
+        }
+
+    </script>
+</body>
+</html>

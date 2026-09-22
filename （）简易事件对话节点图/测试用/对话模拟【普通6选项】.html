@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>对话状态机模拟【多选版】</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Microsoft YaHei', 'SimHei', Arial, sans-serif;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #e94560;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        .dialog-box {
+            background: #16213e;
+            border: 2px solid #e94560;
+            border-radius: 12px;
+            padding: 20px;
+            min-height: 120px;
+            margin-bottom: 20px;
+            font-size: 18px;
+            line-height: 1.6;
+            position: relative;
+            box-shadow: 0 0 20px rgba(233, 69, 96, 0.3);
+        }
+        .dialog-box::before {
+            content: '💬';
+            position: absolute;
+            top: -12px;
+            left: 20px;
+            background: #16213e;
+            padding: 0 8px;
+            font-size: 16px;
+        }
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .option-btn {
+            background: #0f3460;
+            color: #e0e0e0;
+            border: 2px solid #e94560;
+            border-radius: 8px;
+            padding: 15px 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-height: 50px;
+        }
+        .option-btn:hover {
+            background: #e94560;
+            color: #fff;
+            transform: scale(1.02);
+        }
+        .option-btn:disabled {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #0f3460;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .status-bar span {
+            color: #e94560;
+            font-weight: bold;
+        }
+        .import-section {
+            background: #16213e;
+            border: 2px solid #0f3460;
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .import-section h3 {
+            color: #e94560;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        .import-textarea {
+            width: 100%;
+            height: 200px;
+            background: #0a0a1a;
+            color: #00ff88;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 10px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            resize: vertical;
+            margin-bottom: 10px;
+        }
+        .import-btn {
+            background: #e94560;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 25px;
+            font-size: 15px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .import-btn:hover {
+            background: #c23152;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #0f3460;
+            border-radius: 2px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #e94560;
+            width: 0%;
+            transition: width linear;
+        }
+        .debug-info {
+            background: #0a0a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px;
+            font-family: 'Consolas', monospace;
+            font-size: 12px;
+            color: #888;
+            margin-top: 10px;
+            overflow-y: auto;
+            resize: vertical;
+            width: 100%;
+            height: 200px;
+            white-space: pre-line;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>对话系统</h1>
+
+        <div class="status-bar">
+            <div>当前走向：<span id="statusDir">1</span></div>
+            <div>停留时间：<span id="statusTime">1500</span>ms</div>
+            <div>状态：<span id="statusState">等待中</span></div>
+        </div>
+
+        <div class="dialog-box" id="dialogBox">
+            等待导入对话数据...
+        </div>
+
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+        </div>
+
+        <div class="options-grid" id="optionsGrid">
+            <button class="option-btn" id="opt0" onclick="selectOption(0)">选项1</button>
+            <button class="option-btn" id="opt1" onclick="selectOption(1)">选项2</button>
+            <button class="option-btn" id="opt2" onclick="selectOption(2)">选项3</button>
+            <button class="option-btn" id="opt3" onclick="selectOption(3)">选项4</button>
+            <button class="option-btn" id="opt4" onclick="selectOption(4)">选项5</button>
+            <button class="option-btn" id="opt5" onclick="selectOption(5)">选项6</button>
+        </div>
+
+        <div class="import-section">
+            <h3>📋 粘贴对话参数（变量值）</h3>
+            <p style="font-size:12px; color:#888; margin-bottom:10px;">
+                格式：每行一个值，按顺序对应 [自动分支号] [选项1分支] [选项2分支] ... [对话停留时]
+            </p>
+            <textarea class="import-textarea" id="importArea" placeholder="[自动分支号]
+[选项1分支]
+[选项2分支]
+[选项3分支]
+[选项4分支]
+[选项5分支]
+[选项6分支]
+[走向结束序号]
+[序号对话文]
+[序号选项1文]
+[序号选项2文]
+[序号选项3文]
+[序号选项4文]
+[序号选项5文]
+[序号选项6文]
+[对话停留时]"></textarea>
+            <button class="import-btn" onclick="importData()">🚀 开始解析</button>
+            <div class="debug-info" id="debugInfo">等待操作...</div>
+        </div>
+    </div>
+
+    <script>
+        // ========== 全局变量 ==========
+        const MAX_BRANCHES = 0;
+
+        let 走向 = 1;
+        let 自动分支号 = new Array(MAX_BRANCHES + 1).fill(0);
+        let 选项1分支 = new Array(MAX_BRANCHES + 1).fill(0);
+        let 选项2分支 = new Array(MAX_BRANCHES + 1).fill(0);
+        let 选项3分支 = new Array(MAX_BRANCHES + 1).fill(0);
+        let 选项4分支 = new Array(MAX_BRANCHES + 1).fill(0);
+        let 选项5分支 = new Array(MAX_BRANCHES + 1).fill(0);
+        let 选项6分支 = new Array(MAX_BRANCHES + 1).fill(0);
+        let 走向结束序号 = new Array(MAX_BRANCHES + 1).fill(0);
+        let 序号对话文 = new Array(MAX_BRANCHES + 1).fill('');
+        let 序号选项1文 = new Array(MAX_BRANCHES + 1).fill('');
+        let 序号选项2文 = new Array(MAX_BRANCHES + 1).fill('');
+        let 序号选项3文 = new Array(MAX_BRANCHES + 1).fill('');
+        let 序号选项4文 = new Array(MAX_BRANCHES + 1).fill('');
+        let 序号选项5文 = new Array(MAX_BRANCHES + 1).fill('');
+        let 序号选项6文 = new Array(MAX_BRANCHES + 1).fill('');
+        let 对话停留时 = new Array(MAX_BRANCHES + 1).fill(1500);
+
+        let timer = null;
+        let progressInterval = null;
+        let progressValue = 0;
+        let isRunning = false;
+
+        // ========== 初始化 ==========
+        function init() {
+            debug('系统初始化完成，等待导入数据...');
+        }
+
+        // ========== 导入数据 ==========
+        function importData() {
+            const text = document.getElementById('importArea').value;
+            if (!text.trim()) {
+                debug('⚠️ 请输入数据！');
+                return;
+            }
+
+            //const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);//删除了空行，这不对
+            const lines = text.split('\n').map(l => l.trim());
+            const typeMarkers = [
+                '[自动分支号]', '[选项1分支]', '[选项2分支]', '[选项3分支]',
+                '[选项4分支]', '[选项5分支]', '[选项6分支]', '[走向结束序号]',
+                '[序号对话文]', '[序号选项1文]', '[序号选项2文]', '[序号选项3文]',
+                '[序号选项4文]', '[序号选项5文]', '[序号选项6文]', '[对话停留时]'
+            ];
+
+            // 重置数组
+            自动分支号 = new Array(MAX_BRANCHES + 1).fill(0);
+            选项1分支 = new Array(MAX_BRANCHES + 1).fill(0);
+            选项2分支 = new Array(MAX_BRANCHES + 1).fill(0);
+            选项3分支 = new Array(MAX_BRANCHES + 1).fill(0);
+            选项4分支 = new Array(MAX_BRANCHES + 1).fill(0);
+            选项5分支 = new Array(MAX_BRANCHES + 1).fill(0);
+            选项6分支 = new Array(MAX_BRANCHES + 1).fill(0);
+            走向结束序号 = new Array(MAX_BRANCHES + 1).fill(0);
+            序号对话文 = new Array(MAX_BRANCHES + 1).fill('');
+            序号选项1文 = new Array(MAX_BRANCHES + 1).fill('');
+            序号选项2文 = new Array(MAX_BRANCHES + 1).fill('');
+            序号选项3文 = new Array(MAX_BRANCHES + 1).fill('');
+            序号选项4文 = new Array(MAX_BRANCHES + 1).fill('');
+            序号选项5文 = new Array(MAX_BRANCHES + 1).fill('');
+            序号选项6文 = new Array(MAX_BRANCHES + 1).fill('');
+            对话停留时 = new Array(MAX_BRANCHES + 1).fill(1000);
+
+            let currentType = '';
+            let index = 0;
+            let typeIndex = -1;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                let found = false;
+
+                for (let j = 0; j < typeMarkers.length; j++) {
+                    if (line === typeMarkers[j]) {
+                        currentType = typeMarkers[j];
+                        typeIndex = j;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (found) {
+                    index = 1;//JS可以直接追加元素，所以这个不用
+                    continue;
+                }
+
+                if (currentType && typeIndex >= 0) {
+                    debug(`行 ${i}  ${currentType}  数组号 ${index}  值 ${parseInt(line) || line} `);
+                    switch (typeIndex) {
+                        case 0:  自动分支号.push(parseInt(line) || 0); break;
+                        case 1:  选项1分支.push(parseInt(line) || 0);  break;
+                        case 2:  选项2分支.push(parseInt(line) || 0);  break;
+                        case 3:  选项3分支.push(parseInt(line) || 0);  break;
+                        case 4:  选项4分支.push(parseInt(line) || 0);  break;
+                        case 5:  选项5分支.push(parseInt(line) || 0);  break;
+                        case 6:  选项6分支.push(parseInt(line) || 0);  break;
+                        case 7:  走向结束序号.push(parseInt(line) || 0);  break;
+                        case 8:  序号对话文.push(line || '');  break;
+                        case 9:  序号选项1文.push(line || '');  break;
+                        case 10: 序号选项2文.push(line || '');  break;
+                        case 11: 序号选项3文.push(line || '');  break;
+                        case 12: 序号选项4文.push(line || '');  break;
+                        case 13: 序号选项5文.push(line || '');  break;
+                        case 14: 序号选项6文.push(line || '');  break;
+                        case 15: 对话停留时.push(parseInt(line) || 1500);  break;
+                    }
+                    index++;
+                }
+            }
+
+            debug(`✅ 数据导入完成！共 ${index} 条记录`);
+            // 重置并启动
+            走向 = 1;
+            stopTimer();
+            refreshCurrentState();
+        }
+
+        // ========== 公共更新界面状态函数，完全对齐VB中按钮和定时器最后共同执行的逻辑 ==========
+        function refreshCurrentState() {
+            const btns = [
+                document.getElementById('opt0'),
+                document.getElementById('opt1'),
+                document.getElementById('opt2'),
+                document.getElementById('opt3'),
+                document.getElementById('opt4'),
+                document.getElementById('opt5')
+            ];
+
+            // 分支值为0就隐藏对应按钮
+            const branches = [
+                选项1分支[走向], 选项2分支[走向], 选项3分支[走向],
+                选项4分支[走向], 选项5分支[走向], 选项6分支[走向]
+            ];
+for (let i = 0; i < 6; i++) {
+    if (!btns[i]) continue; // 新增DOM非空校验
+    if (branches[i] === 0) {
+        btns[i].disabled = true;
+        btns[i].style.display = 'none';
+    } else {
+        btns[i].disabled = false;
+        btns[i].style.display = '';
+    }
+}
+
+            // 更新所有按钮的显示文本
+            const captions = [
+                序号选项1文[走向], 序号选项2文[走向], 序号选项3文[走向],
+                序号选项4文[走向], 序号选项5文[走向], 序号选项6文[走向]
+            ];
+            for (let i = 0; i < 6; i++) {
+                btns[i].textContent = captions[i] || '选项' + (i + 1);
+            }
+
+            // 更新顶部状态栏显示
+            document.getElementById('dialogBox').textContent = 序号对话文[走向] || '（无对话文本）';
+            document.getElementById('statusDir').textContent = 走向;
+            document.getElementById('statusTime').textContent = 对话停留时[走向] || 1500;
+            document.getElementById('statusState').textContent = '运行中';
+            
+            // 触发对应走向的事件，完全对齐VB逻辑
+            触发事件(走向);
+        }
+
+        // ========== 定时器控制 完全对齐VB定时器逻辑 ==========
+        function startTimer(delay) {
+    // 新增前置步骤：先强制清空残留定时器、重置标志位，避免上一轮的isRunning残留拦截新定时器
+    if (isRunning) {
+        stopTimer();
+    }
+   if (isRunning) return;
+debug(`中断前 走向 ${走向}   预走向 ${自动分支号[走向]}   停留 ${对话停留时[走向] || 1500}`);
+
+            isRunning = true;
+debug(`中断后 走向 ${走向}   预走向 ${自动分支号[走向]}   停留 ${对话停留时[走向] || 1500}`);
+            // 兼容导入时无参调用的场景，自动补全默认停留时间
+            const runDelay = delay || 对话停留时[走向] || 1500;
+            timer = setTimeout(() => {
+                // 第一优先级判断：是否已经到达结束序号
+                if (走向 >= 走向结束序号[走向]) {
+                    stopTimer();
+                    走向 = 1;
+                    refreshCurrentState();
+                    debug('🔄 到达结束序号，停止定时器，重置走向到起点1');
+                    document.getElementById('statusState').textContent = '已结束';
+                } else {
+                    // 未到达结束，跳转到自动分支号对应的目标走向
+                    debug(`进入后 走向 ${走向}   预走向 ${自动分支号[走向]}   停留 ${对话停留时[走向] || 1500}`);
+                    // 新增空值防护，确保自动分支号读取合法，不会得到undefined异常值
+                    走向 = 自动分支号[走向] || 走向;
+
+                    // 执行所有共同逻辑：更新按钮显隐、文本、状态、触发事件
+                    refreshCurrentState();
+
+                    // 无条件重启下一轮定时器，完全移除之前"检查是否有按钮才启动"的多余限制
+                    const nextDelay = 对话停留时[走向] || 1500;
+                    startTimer(nextDelay);
+                }
+            }, runDelay);
+
+            // 进度条动画
+            startProgress(runDelay);
+        }
+
+        function stopTimer() {
+            isRunning = false;
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+            if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+            document.getElementById('progressFill').style.width = '0%';
+            progressValue = 0;
+        }
+
+        function startProgress(duration) {
+            if (progressInterval) clearInterval(progressInterval);
+            progressValue = 0;
+            const step = 100 / (duration / 50);
+            progressInterval = setInterval(() => {
+                progressValue += step;
+                if (progressValue >= 100) {
+                    progressValue = 100;
+                    clearInterval(progressInterval);
+                }
+                document.getElementById('progressFill').style.width = progressValue + '%';
+            }, 50);
+        }
+
+        // ========== 选择选项 完全对齐VB按钮点击逻辑 ==========
+        function selectOption(btnIndex) {
+            stopTimer();
+
+            // 第一优先级判断：是否已经到达结束序号
+            if (走向 >= 走向结束序号[走向]) {
+                stopTimer();
+                走向 = 1;
+                refreshCurrentState();
+                debug('🔄 到达结束序号，停止定时器，重置走向到起点1');
+            } else {
+                // 未到达结束，跳转到对应选项的分支
+                const branchMap = [
+                    选项1分支, 选项2分支, 选项3分支,
+                    选项4分支, 选项5分支, 选项6分支
+                ];
+                走向 = branchMap[btnIndex][走向];
+                // 执行所有共同逻辑：更新按钮显隐、文本、状态、触发事件
+                refreshCurrentState();
+
+                // 设置新的停留值，启动定时器
+                const delay = 对话停留时[走向] || 1500;
+                startTimer(delay);
+            }
+        }
+
+        // ========== 触发事件 ==========
+        function 触发事件(dir) {
+            switch (dir) {
+                case 0:
+                    debug('⚡ 事件触发：走向 0');
+                    break;
+                case 1:
+                    debug('⚡ 事件触发：走向 1');
+                    break;
+                case 99:
+                    debug('⚡ 事件触发：走向 99');
+                    break;
+                default:
+                    debug(`📌 事件检查：走向 ${dir}`);
+            }
+        }
+
+// ========== 调试信息 ==========
+function debug(msg) {
+    const el = document.getElementById('debugInfo');
+    const time = new Date().toLocaleTimeString();
+    // 修正转义错误：使用合法换行符\n
+    el.textContent = el.textContent + `\n[${time}] ${msg}`;
+    // 自动滚动到底部，新日志自动显示在可视区域
+    el.scrollTop = el.scrollHeight;
+    // 纯文本长度判断清理旧日志，完全避免访问children属性的非法操作
+    if (el.textContent.length > 20000) {
+        el.textContent = el.textContent.slice(-20000);
+    }
+}
+
+
+        // ========== 启动 ==========
+        init();
+    </script>
+</body>
+</html>
+ 
