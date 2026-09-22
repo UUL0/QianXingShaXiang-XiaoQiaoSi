@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>等腰三角形可视化工具</title>
+<script src="https://aisearch-task.bj.bcebos.com/static/tailwindcss-3.4.17.js"></script>
+<style>
+  :root {
+    --brand-rgb: 59, 130, 246;
+    --accent-rgb: 249, 115, 22;
+    --card-bg: #ffffff;
+    --bg-start: #f0f4ff;
+    --bg-end: #fef3f0;
+  }
+  body {
+    font-family: 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: linear-gradient(135deg, var(--bg-start) 0%, #ffffff 50%, var(--bg-end) 100%);
+    min-height: 100vh;
+  }
+  .canvas-wrapper {
+    background: #ffffff;
+    background-image:
+      linear-gradient(rgba(59,130,246,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,130,246,0.06) 1px, transparent 1px);
+    background-size: 20px 20px;
+    border-radius: 16px;
+    box-shadow: 0 4px 24px rgba(59,130,246,0.08);
+  }
+  .mode-btn {
+    transition: all 0.25s cubic-bezier(.2,.8,.2,1);
+  }
+  .mode-btn.active {
+    background: linear-gradient(135deg, rgb(var(--brand-rgb)), rgb(var(--accent-rgb)));
+    color: white;
+    box-shadow: 0 4px 14px rgba(59,130,246,0.35);
+    transform: translateY(-1px);
+  }
+  .glass-card {
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.6);
+    box-shadow: 0 8px 32px rgba(59,130,246,0.10);
+  }
+  .upload-zone {
+    border: 2px dashed rgba(59,130,246,0.4);
+    transition: all 0.25s ease;
+    cursor: pointer;
+  }
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: rgb(var(--brand-rgb));
+    background: rgba(59,130,246,0.06);
+  }
+  .shape-item {
+    transition: all 0.15s ease;
+    cursor: pointer;
+  }
+  .shape-item:hover {
+    background: rgba(59,130,246,0.08);
+    transform: translateX(2px);
+  }
+  .shape-item.selected {
+    background: rgba(59,130,246,0.12);
+    border-left: 3px solid rgb(var(--brand-rgb));
+  }
+  .legend-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    display: inline-block;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .custom-scroll::-webkit-scrollbar { width: 6px; }
+  .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+  .custom-scroll::-webkit-scrollbar-thumb { background: rgba(59,130,246,0.3); border-radius: 3px; }
+  .custom-scroll::-webkit-scrollbar-thumb:hover { background: rgba(59,130,246,0.5); }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .fade-in { animation: fadeInUp 0.4s cubic-bezier(.2,.8,.2,1) both; }
+
+  .toggle-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    color: #4b5563;
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 8px;
+    border-radius: 8px;
+    transition: background 0.2s;
+  }
+  .toggle-row:hover { background: rgba(59,130,246,0.06); }
+  .toggle-row input[type="checkbox"] {
+    cursor: pointer;
+    accent-color: #3b82f6;
+  }
+</style>
+</head>
+<body class="p-4 md:p-8">
+
+<div class="max-w-[1400px] mx-auto">
+
+  <!-- 标题 -->
+  <header class="mb-6 fade-in">
+    <div class="flex items-center gap-3 mb-2">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-orange-400 flex items-center justify-center shadow-lg">
+        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21L17 3M7 21l10-18M7 21h10"/></svg>
+      </div>
+      <h1 class="text-2xl md:text-4xl font-black text-gray-800 tracking-tight leading-tight">等腰三角形可视化工具</h1>
+    </div>
+    <p class="text-gray-500 text-[15px] md:text-base ml-13">支持导入 JSON 数据 · 顶点绘制 / 参数绘制 双模式切换 · 实时查看底、高、重心/中心与旋转角度</p>
+  </header>
+
+  <!-- 控制面板 -->
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+    <!-- 左侧：画布区 -->
+    <div id="leftCol" class="lg:col-span-12 space-y-5">
+
+      <!-- 工具栏 -->
+      <div class="glass-card rounded-2xl p-4 flex flex-wrap items-center gap-3 fade-in">
+        <!-- 模式切换 -->
+        <div class="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+          <button id="modeVertices" class="mode-btn active px-4 py-2 rounded-lg text-sm font-semibold">
+            <span class="inline-flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="19" r="2" stroke-width="2"/><circle cx="19" cy="19" r="2" stroke-width="2"/><circle cx="12" cy="5" r="2" stroke-width="2"/><path stroke-linecap="round" stroke-width="2" d="M6.5 17.5L10.5 7M17.5 17.5L13.5 7M7 19h10"/></svg>
+              顶点绘制
+            </span>
+          </button>
+          <button id="modeParams" class="mode-btn px-4 py-2 rounded-lg text-sm font-semibold text-gray-600">
+            <span class="inline-flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h16M12 4v16M8 8l4-4 4 4"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>
+              底·高·重心/中心·角度
+            </span>
+          </button>
+        </div>
+
+        <!-- 分隔线 -->
+        <div class="h-6 w-px bg-gray-200 hidden md:block"></div>
+
+        <!-- 显示选项 -->
+        <div class="flex items-center gap-1 flex-wrap">
+          <label class="toggle-row">
+            <input type="checkbox" id="showLabels" checked>
+            <span>标注</span>
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" id="showGrid" checked>
+            <span>网格</span>
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" id="showRect" checked>
+            <span>背景矩形</span>
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" id="showVertices" checked>
+            <span>顶点圆圈</span>
+          </label>
+          <label class="toggle-row" title="图形数量较多时建议关闭以提升性能">
+            <input type="checkbox" id="showList">
+            <span>图形列表</span>
+          </label>
+          <label class="toggle-row" title="勾选后 type=8 的旋转角度取反（-1 × angle）">
+            <input type="checkbox" id="invertAngle">
+            <span>角度反转</span>
+          </label>
+          <label class="toggle-row">
+            <input type="checkbox" id="centerMode" checked>
+            <span>中心模式（取消则为重心）</span>
+          </label>
+        </div>
+
+        <!-- 缩放 -->
+        <div class="flex items-center gap-2 ml-auto">
+          <button id="zoomOut" class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition">−</button>
+          <span id="zoomLabel" class="text-sm font-mono text-gray-600 w-12 text-center">100%</span>
+          <button id="zoomIn" class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 transition">+</button>
+          <button id="fitView" class="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm text-gray-600 transition font-medium">适应视图</button>
+        </div>
+      </div>
+
+      <!-- 画布 -->
+      <div class="canvas-wrapper p-2 fade-in" style="animation-delay:.08s">
+        <canvas id="canvas" class="w-full rounded-xl block" style="height:600px;"></canvas>
+      </div>
+
+      <!-- 上传区 -->
+      <div class="glass-card rounded-2xl p-5 fade-in" style="animation-delay:.16s">
+        <div id="uploadZone" class="upload-zone rounded-xl p-6 text-center">
+          <svg class="w-10 h-10 text-blue-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 16a4 4 0 01-.88-7.9A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+          <p class="text-gray-700 font-semibold mb-1">点击或拖拽 JSON 文件到此处导入</p>
+          <p class="text-gray-400 text-sm">支持 type=0（矩形）、type=2（三角形）、type=8（等腰三角形，含 params）· color: [R,G,B,A] 透明度按 A 值原样渲染</p>
+          <input type="file" id="fileInput" accept=".json,.txt" class="hidden">
+        </div>
+        <div id="fileInfo" class="hidden mt-3 flex items-center justify-between text-sm">
+          <div class="flex items-center gap-2">
+            <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span id="fileName" class="font-medium text-gray-700"></span>
+            <span id="shapeCount" class="text-gray-500"></span>
+          </div>
+          <button id="resetBtn" class="text-red-500 hover:text-red-600 font-medium text-sm">重置为示例数据</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧：图形列表（默认隐藏） -->
+    <div id="rightCol" class="lg:col-span-3 fade-in hidden" style="animation-delay:.12s">
+      <div class="glass-card rounded-2xl p-5 h-full max-h-[760px] flex flex-col">
+        <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
+          <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+          图形列表
+        </h3>
+        <div class="flex gap-2 mb-3 text-xs flex-wrap">
+          <span class="badge bg-blue-100 text-blue-700">矩形: <span id="cnt0">0</span></span>
+          <span class="badge bg-purple-100 text-purple-700">三角形: <span id="cnt2">0</span></span>
+          <span class="badge bg-orange-100 text-orange-700">等腰三角: <span id="cnt8">0</span></span>
+        </div>
+        <div id="listNotice" class="hidden text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-2">
+          图形数量较多，为避免卡顿仅显示前 <span id="listLimit">500</span> 条
+        </div>
+        <div id="shapeList" class="custom-scroll overflow-y-auto flex-1 space-y-1 -mx-2 px-2"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// =============== 默认示例数据 ===============
+const SAMPLE_DATA = [
+  {type:0,data:[0,0,639,399],color:[45,43,40,255],score:0},
+  {type:8,data:[429,352,138,188,382,95],color:[255,255,255,128],params:[334,200,317,212,209.39080657442813],score:0.2167647302355743},
+  {type:8,data:[365,-41,451,212,218,149],color:[191,255,0,128],params:[268,200,345,107,71.25652954269046],score:0.20490370596434065},
+  {type:8,data:[650,203,291,26,558,-64],color:[0,0,0,128],params:[400,200,500,55,206.17131269124332],score:0.20015876937090357},
+  {type:8,data:[169,240,495,224,339,386],color:[161,0,255,128],params:[326,154,335,284,357.23262965048974],score:0.18666014048742405},
+  {type:8,data:[291,48,270,357,134,193],color:[0,219,197,128],params:[310,146,232,200,93.88026216636375],score:0.1756033449603671},
+  {type:8,data:[164,243,358,291,236,368],color:[0,0,231,128],params:[200,104,253,301,13.738653417622706],score:0.17285219103909433},
+  {type:8,data:[26,78,-43,54,26,-34],color:[255,255,255,128],params:[74,107,3,33,199.2285941793395],score:0.16788842372763896},
+  {type:8,data:[364,130,365,278,230,205],color:[255,255,255,128],params:[148,134,320,205,89.51835824912811],score:0.1634997399771837},
+  {type:8,data:[282,24,331,138,151,149],color:[0,225,0,128],params:[124,170,255,104,66.4682927014307],score:0.16052196986773248}
+];
+
+// =============== 状态 ===============
+let shapes = JSON.parse(JSON.stringify(SAMPLE_DATA));
+let drawMode = 'vertices';
+let zoom = 1;
+let offsetX = 0, offsetY = 0;
+let selectedIndex = -1;
+let dragging = false, dragStart = null;
+let showLabels = true, showGrid = true, showRect = true, showVertices = true, showList = false, invertAngle = false, centerMode = true;
+const LIST_RENDER_LIMIT = 500; // 列表单次最多渲染条数，防止上万个图形时卡顿
+
+// =============== 画布 ===============
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  draw();
+}
+window.addEventListener('resize', resizeCanvas);
+
+function getViewBounds() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  return {w, h};
+}
+
+function computeAutoFit() {
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  const consider = (x,y)=>{
+    if(!isFinite(x)||!isFinite(y))return;
+    if(x<minX)minX=x;if(y<minY)minY=y;
+    if(x>maxX)maxX=x;if(y>maxY)maxY=y;
+  };
+  shapes.forEach(s=>{
+    if(s.type===0){
+      const [x1,y1,x2,y2]=s.data;
+      consider(x1,y1);consider(x2,y2);
+    } else if(s.type===2){
+      for(let i=0;i<s.data.length;i+=2) consider(s.data[i],s.data[i+1]);
+    } else if(s.type===8){
+      // 两种模式的顶点都纳入范围，避免切换模式后越界
+      for(let i=0;i<s.data.length;i+=2) consider(s.data[i],s.data[i+1]);
+      if(s.params && Array.isArray(s.params) && s.params.length>=5){
+        // 同时考虑"中心模式"和"重心模式"两种计算结果，保证切换后不越界
+        const [cx,cy,b,h,a]=s.params;
+        isoGeometry(b,h,cx,cy,a,true).verts.forEach(([x,y])=>consider(x,y));
+        isoGeometry(b,h,cx,cy,a,false).verts.forEach(([x,y])=>consider(x,y));
+      }
+    }
+  });
+  if(!isFinite(minX)){minX=0;minY=0;maxX=640;maxY=400;}
+  const pad=40;
+  minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;
+  const {w,h}=getViewBounds();
+  const sx=w/(maxX-minX), sy=h/(maxY-minY);
+  zoom=Math.min(sx,sy);
+  offsetX = w/2 - ((minX+maxX)/2)*zoom;
+  offsetY = h/2 - ((minY+maxY)/2)*zoom;
+  offsetY = h - offsetY;
+}
+
+// 根据全局"角度反转"开关得到生效的角度（type=8 使用）
+function effectiveAngle(angleDeg){
+  return invertAngle ? -angleDeg : angleDeg;
+}
+
+// 根据 params=[cx,cy,底,高,angleDeg] 计算理论等腰三角形几何要素（世界坐标）
+// centerMode=true  -> (cx,cy) 为"中心"（高的中点，即高垂线上 h/2 位置，到底边和顶角距离相等）
+// centerMode=false -> (cx,cy) 为"重心"（距底边 h/3，距顶角 2h/3）
+// 几何约定（屏幕坐标 y 轴向上）：
+//   angle=0° 时高竖直向上（顶点在上、底边水平在下，正立等腰三角形）
+//   angle 为正 → 顺时针旋转；angle 为负 → 逆时针旋转（反转开关关闭时）
+//   勾选"角度反转"后所有 type=8 的角度取反
+function isoGeometry(base, height, cx, cy, angleDeg, centerMode){
+  const ang = effectiveAngle(angleDeg);
+  const rad = -ang*Math.PI/180; // 负号使正角度=顺时针
+  const cosA = Math.cos(rad), sinA = Math.sin(rad);
+  // 高方向单位向量（世界坐标：从底边中点指向顶角）
+  const hx = sinA, hy = cosA;
+  // 底边方向单位向量（垂直于高，从 b1 指向 b2）
+  const bx = cosA, by = -sinA;
+  const halfBase = base/2;
+
+  // 中心(cx,cy)相对底边中点、顶角的偏移
+  //   中心模式：中心在高的中点（距底边 h/2，距顶角 h/2）
+  //   重心模式：重心距底边 h/3，距顶角 2h/3
+  const baseOffset = centerMode ? height/2 : height/3;    // 中心到"底边中点"的距离（沿高的反方向）
+  const apexOffset = centerMode ? height/2 : height*2/3;  // 中心到"顶角"的距离（沿高的正方向）
+
+  // 底边中点
+  const midBX = cx - hx*baseOffset;
+  const midBY = cy - hy*baseOffset;
+  // 顶角
+  const apexX = cx + hx*apexOffset;
+  const apexY = cy + hy*apexOffset;
+  // 底边两端
+  const b1x = midBX - bx*halfBase, b1y = midBY - by*halfBase;
+  const b2x = midBX + bx*halfBase, b2y = midBY + by*halfBase;
+  return {
+    verts: [[b1x,b1y],[b2x,b2y],[apexX,apexY]],
+    midBase: [midBX,midBY],
+    apex: [apexX,apexY],
+    b1: [b1x,b1y],
+    b2: [b2x,b2y],
+    center: [cx,cy],
+    rad, ang,
+    hDir:[hx,hy], bDir:[bx,by]
+  };
+}
+
+// 默认调用：使用当前全局开关（从 params=[cx,cy,底,高,angleDeg] 中解包）
+function isoVerticesFromParams(cx, cy, base, height, angleDeg){
+  return isoGeometry(base, height, cx, cy, angleDeg, centerMode).verts;
+}
+
+// 获取一个三角形在"当前绘制模式"下实际使用的三顶点（世界坐标）与对应的标签
+// 返回 {verts:[[x,y],[x,y],[x,y]], labels:['A','B','C'], isParametric:bool}
+function getEffectiveTriangleVerts(s){
+  if(s.type===8 && drawMode==='params' && s.params && Array.isArray(s.params) && s.params.length>=5){
+    return {
+      verts: isoVerticesFromParams(...s.params),
+      labels: ['B₁','B₂','A'], // 底边两端 + 顶角
+      isParametric: true
+    };
+  }
+  // 顶点模式（type=8 使用 data）或 type=2
+  const d = s.data || [];
+  return {
+    verts: [[d[0],d[1]],[d[2],d[3]],[d[4],d[5]]],
+    labels: ['A','B','C'],
+    isParametric: false
+  };
+}
+
+function sx(x){return x*zoom+offsetX;}
+function sy(y){return offsetY - y*zoom;}
+
+function draw(){
+  const {w,h}=getViewBounds();
+  ctx.clearRect(0,0,w,h);
+  if(showGrid) drawGrid(w,h);
+
+  shapes.forEach((s,idx)=>{
+    if(s.type===0 && showRect) drawRect(s, idx===selectedIndex);
+    else if(s.type===2) drawTriangle(s, idx===selectedIndex, false);
+    else if(s.type===8) drawTriangle(s, idx===selectedIndex, true);
+  });
+
+  drawOrigin();
+}
+
+function drawGrid(w,h){
+  ctx.save();
+  const step = 50*zoom;
+  if(step<10) {ctx.restore();return;}
+  const gs = 50;
+  ctx.strokeStyle='rgba(59,130,246,0.10)';
+  ctx.lineWidth=1;
+  ctx.beginPath();
+  const xStart = Math.floor(-offsetX/(gs*zoom))*gs - gs;
+  const xEnd = xStart + Math.ceil(w/(gs*zoom))*gs + 2*gs;
+  for(let x=xStart; x<=xEnd; x+=gs){
+    const px=sx(x);
+    ctx.moveTo(px,0);ctx.lineTo(px,h);
+  }
+  const yStart = Math.floor(-(h-offsetY)/(gs*zoom))*gs - gs;
+  const yEnd = yStart + Math.ceil(h/(gs*zoom))*gs + 2*gs;
+  for(let y=yStart; y<=yEnd; y+=gs){
+    const py=sy(y);
+    ctx.moveTo(0,py);ctx.lineTo(w,py);
+  }
+  ctx.stroke();
+
+  ctx.strokeStyle='rgba(59,130,246,0.45)';
+  ctx.lineWidth=1.5;
+  ctx.beginPath();
+  ctx.moveTo(0,sy(0));ctx.lineTo(w,sy(0));
+  ctx.moveTo(sx(0),0);ctx.lineTo(sx(0),h);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawOrigin(){
+  const [ox,oy]=[sx(0),sy(0)];
+  ctx.save();
+  ctx.fillStyle='rgba(59,130,246,0.7)';
+  ctx.beginPath();ctx.arc(ox,oy,3.5,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='rgba(59,130,246,0.7)';
+  ctx.font='11px SF Mono, Menlo, monospace';
+  ctx.fillText('O', ox+5, oy-5);
+  ctx.restore();
+}
+
+// =============== 颜色处理：完全读取 JSON 的 color 属性 ===============
+// color 可能缺失、可能是 3 元素（无 alpha）、可能是 4 元素 [R,G,B,A] (0-255)
+// 完全尊重 A 值，不再额外乘透明度系数
+function parseColor(c){
+  if(!c || !Array.isArray(c)) return {r:59,g:130,b:246,a:1};
+  const [r=59,g=130,b=246,a=255] = c;
+  return {r:clamp(r,0,255), g:clamp(g,0,255), b:clamp(b,0,255), a:clamp(a,0,255)/255};
+}
+function clamp(v,lo,hi){ return Math.max(lo, Math.min(hi, v)); }
+// 填充色：原始 alpha
+function fillStyleOf(c){ const {r,g,b,a}=parseColor(c); return `rgba(${r},${g},${b},${a})`; }
+// 描边色：在原始 alpha 基础上稍微加强一点（更实），但仍尊重数据；最低保证到 0.55 以便看清轮廓
+function strokeStyleOf(c){ const {r,g,b,a}=parseColor(c); return `rgba(${r},${g},${b},${Math.max(0.55, Math.min(1, a*1.1 + 0.1))})`; }
+// 顶点色：取原始颜色并保证足够实
+function vertexStyleOf(c){ const {r,g,b}=parseColor(c); return `rgb(${r},${g},${b})`; }
+
+function drawRect(s, selected){
+  const [x1,y1,x2,y2]=s.data;
+  ctx.save();
+  ctx.fillStyle=fillStyleOf(s.color);
+  ctx.strokeStyle=selected?'#3b82f6':strokeStyleOf(s.color);
+  ctx.lineWidth=selected?2.5:1;
+  const px=sx(Math.min(x1,x2)), py=sy(Math.max(y1,y2));
+  const w=Math.abs(x2-x1)*zoom, hh=Math.abs(y2-y1)*zoom;
+  ctx.fillRect(px,py,w,hh);
+  ctx.strokeRect(px,py,w,hh);
+  ctx.restore();
+}
+
+function drawTriangle(s, selected, isIsoceles){
+  ctx.save();
+
+  // 根据当前绘制模式决定真正要画的三顶点
+  const {verts, labels, isParametric} = getEffectiveTriangleVerts(s);
+  const [[x1,y1],[x2,y2],[x3,y3]] = verts;
+  const p1=[sx(x1),sy(y1)],p2=[sx(x2),sy(y2)],p3=[sx(x3),sy(y3)];
+
+  // 填充：尊重 JSON 的 alpha
+  ctx.fillStyle=fillStyleOf(s.color);
+  // 描边：选中态用高亮色；否则用颜色本身（略实于填充）
+  ctx.strokeStyle=selected?'#f97316':strokeStyleOf(s.color);
+  ctx.lineWidth=selected?2.5:1.5;
+  ctx.beginPath();
+  ctx.moveTo(...p1);ctx.lineTo(...p2);ctx.lineTo(...p3);ctx.closePath();
+  ctx.fill();ctx.stroke();
+
+  if(drawMode==='vertices'){
+    // === 顶点模式：顶点圆圈 + 顶点标签（受 showVertices 控制）===
+    const pts=[[p1,labels[0],verts[0]],[p2,labels[1],verts[1]],[p3,labels[2],verts[2]]];
+    pts.forEach(([p,lab,wv],wi)=>{
+      if(showVertices){
+        ctx.fillStyle=selected?'#f97316':vertexStyleOf(s.color);
+        ctx.beginPath();ctx.arc(p[0],p[1],selected?5:4,0,Math.PI*2);ctx.fill();
+        ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();
+      }
+      if(showLabels){
+        const lblColor = selected?'#f97316':'#1f2937';
+        ctx.fillStyle=lblColor;
+        ctx.font='bold 12px PingFang SC, sans-serif';
+        const off = showVertices ? 7 : 0;
+        ctx.fillText(lab, p[0]+off+2, p[1]-off-2);
+        ctx.fillStyle='#6b7280';
+        ctx.font='11px SF Mono, Menlo, monospace';
+        ctx.fillText(`(${wv[0].toFixed(1)}, ${wv[1].toFixed(1)})`, p[0]+off+2, p[1]+off+10);
+      }
+    });
+    if(showLabels){
+      const edges=[[p1,p2,`${labels[0]}${labels[1]}`],[p2,p3,`${labels[1]}${labels[2]}`],[p3,p1,`${labels[2]}${labels[0]}`]];
+      edges.forEach(([a,b,lab])=>{
+        const mx=(a[0]+b[0])/2, my=(a[1]+b[1])/2;
+        ctx.fillStyle='#374151';
+        ctx.font='11px SF Mono, Menlo, monospace';
+        ctx.fillText(lab, mx+5, my-5);
+      });
+    }
+  } else {
+    // === 参数模式：底、高、中心/重心、旋转角度 ===
+    if(isIsoceles && s.params && Array.isArray(s.params) && s.params.length>=5){
+      // 三角形已用 params 计算的顶点绘制完毕；参数化几何标注（底/高/中心·重心/角度）统一受"标注"开关控制
+      const [cx, cy, base, height, angleDeg]=s.params;
+      const geo = isoGeometry(base, height, cx, cy, angleDeg, centerMode);
+
+      const s_midB=[sx(geo.midBase[0]),sy(geo.midBase[1])];
+      const s_apex=[sx(geo.apex[0]),sy(geo.apex[1])];
+      const s_b1=[sx(geo.b1[0]),sy(geo.b1[1])];
+      const s_b2=[sx(geo.b2[0]),sy(geo.b2[1])];
+      const ccx=sx(cx), ccy=sy(cy);
+      const centerLabel = centerMode ? '中心' : '重心';
+      const centerColor = centerMode ? '#8b5cf6' : '#10b981'; // 紫色=中心，绿色=重心
+
+      if(showLabels){
+        // 底边高亮（蓝色实线）
+        ctx.strokeStyle='#3b82f6';
+        ctx.lineWidth=3;
+        ctx.beginPath();ctx.moveTo(...s_b1);ctx.lineTo(...s_b2);ctx.stroke();
+
+        // 高（红色虚线）+ 直角标记：从底边中点 → 顶角，经过中心点
+        ctx.save();
+        ctx.strokeStyle='#ef4444';
+        ctx.lineWidth=2;
+        ctx.setLineDash([6,4]);
+        ctx.beginPath();ctx.moveTo(...s_midB);ctx.lineTo(...s_apex);ctx.stroke();
+        ctx.setLineDash([]);
+        // 直角标记（在底边中点处）
+        const nrm=[s_apex[0]-s_midB[0],s_apex[1]-s_midB[1]];
+        const nlen=Math.hypot(...nrm);
+        const nx=nrm[0]/nlen*8, ny=nrm[1]/nlen*8;
+        const t1=[s_b2[0]-s_b1[0],s_b2[1]-s_b1[1]];
+        const tlen=Math.hypot(...t1);
+        const tx=t1[0]/tlen*8, ty=t1[1]/tlen*8;
+        ctx.strokeStyle='#ef4444';
+        ctx.lineWidth=1.5;
+        ctx.beginPath();
+        ctx.moveTo(s_midB[0]+nx, s_midB[1]+ny);
+        ctx.lineTo(s_midB[0]+nx+tx, s_midB[1]+ny+ty);
+        ctx.lineTo(s_midB[0]+tx, s_midB[1]+ty);
+        ctx.stroke();
+        ctx.restore();
+
+        // 中心点（中心/重心，带十字标记）
+        ctx.fillStyle=centerColor;
+        ctx.strokeStyle='#fff';ctx.lineWidth=2;
+        ctx.beginPath();ctx.arc(ccx,ccy,6,0,Math.PI*2);ctx.fill();ctx.stroke();
+        ctx.strokeStyle=centerColor;ctx.lineWidth=1.5;
+        ctx.beginPath();
+        ctx.moveTo(ccx-10,ccy);ctx.lineTo(ccx+10,ccy);
+        ctx.moveTo(ccx,ccy-10);ctx.lineTo(ccx,ccy+10);
+        ctx.stroke();
+
+        // 旋转角度弧（橙色）——从"向上"基准到高方向
+        ctx.strokeStyle='rgba(249,115,22,0.85)';
+        ctx.lineWidth=1.5;
+        ctx.beginPath();
+        ctx.arc(ccx,ccy,22, -Math.PI/2, -Math.PI/2 - geo.rad, geo.rad>0);
+        ctx.stroke();
+
+        // 文字标注
+        ctx.font='bold 12px PingFang SC, sans-serif';
+        const mbx=(s_b1[0]+s_b2[0])/2, mby=(s_b1[1]+s_b2[1])/2;
+        drawLabel(mbx, mby+14, `底=${base}`, '#3b82f6');
+        const mhx=(s_midB[0]+s_apex[0])/2, mhy=(s_midB[1]+s_apex[1])/2;
+        drawLabel(mhx+8, mhy, `高=${height}`, '#ef4444');
+        drawLabel(ccx+10, ccy-10, `${centerLabel}(${cx},${cy})`, centerColor);
+        drawLabel(ccx+26, ccy-26, `∠${geo.ang.toFixed(1)}°`, '#f97316');
+      }
+
+      // 三个顶点的弱化小圆点（仅受"顶点圆圈"开关控制，与"标注"无关）
+      if(showVertices){
+        [s_b1,s_b2,s_apex].forEach(p=>{
+          ctx.fillStyle=selected?'#f97316':vertexStyleOf(s.color);
+          ctx.globalAlpha=0.7;
+          ctx.beginPath();ctx.arc(p[0],p[1],3,0,Math.PI*2);ctx.fill();
+          ctx.globalAlpha=1;
+        });
+      }
+    } else {
+      // type=2 普通三角形（参数模式，仍然画 3 顶点 + 重心）
+      const pts=[p1,p2,p3];
+      if(showVertices){
+        pts.forEach(p=>{
+          ctx.fillStyle=selected?'#f97316':vertexStyleOf(s.color);
+          ctx.beginPath();ctx.arc(p[0],p[1],selected?5:4,0,Math.PI*2);ctx.fill();
+        });
+      }
+      if(showLabels){
+        const gx=(x1+x2+x3)/3, gy=(y1+y2+y3)/3;
+        const sg=[sx(gx),sy(gy)];
+        ctx.fillStyle='#10b981';
+        ctx.beginPath();ctx.arc(sg[0],sg[1],4,0,Math.PI*2);ctx.fill();
+        ctx.font='11px SF Mono, monospace';
+        ctx.fillStyle='#10b981';
+        ctx.fillText(`重心(${gx.toFixed(0)},${gy.toFixed(0)})`,sg[0]+6,sg[1]-6);
+      }
+    }
+  }
+
+  // 序号标记（基于实际绘制的三角形中心）
+  if(s.type!==0 && showLabels){
+    // 参数模式下的 type=8：序号放到 params 的(cx,cy)位置（即中心/重心控制点），其他情况用三角形几何重心
+    let labelX, labelY;
+    if(isParametric && isIsoceles && s.params && s.params.length>=5){
+      const [cx, cy] = s.params;
+      labelX = sx(cx); labelY = sy(cy);
+    } else {
+      labelX = (p1[0]+p2[0]+p3[0])/3;
+      labelY = (p1[1]+p2[1]+p3[1])/3;
+    }
+    ctx.fillStyle=selected?'#f97316':'#6b7280';
+    ctx.font='bold 11px PingFang SC, sans-serif';
+    ctx.fillText(`#${shapes.indexOf(s)}`, labelX-10, labelY+4);
+    // 参数模式下给 type=8 加一个"参数化"小标记，区别于顶点模式
+    if(isParametric){
+      ctx.fillStyle='#9ca3af';
+      ctx.font='10px PingFang SC, sans-serif';
+      ctx.fillText('(params)', labelX-18, labelY+16);
+    }
+  }
+
+  ctx.restore();
+}
+
+function drawLabel(x,y,text,color){
+  ctx.save();
+  ctx.font='bold 11px PingFang SC, Menlo, monospace';
+  const w=ctx.measureText(text).width+8;
+  ctx.fillStyle='rgba(255,255,255,0.92)';
+  ctx.strokeStyle=color;
+  ctx.lineWidth=1;
+  ctx.beginPath();
+  roundRect(ctx,x-4,y-10,w,16,4);
+  ctx.fill();ctx.stroke();
+  ctx.fillStyle=color;
+  ctx.fillText(text,x,y+2);
+  ctx.restore();
+}
+
+function roundRect(ctx,x,y,w,h,r){
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+
+// =============== 列表渲染（限制条数防止大量数据卡顿） ===============
+function renderList(){
+  // 数量徽章始终更新（即使列表隐藏，徽章也可作为信息）
+  const c0=shapes.filter(s=>s.type===0).length;
+  const c2=shapes.filter(s=>s.type===2).length;
+  const c8=shapes.filter(s=>s.type===8).length;
+  const cnt0=document.getElementById('cnt0');
+  const cnt2=document.getElementById('cnt2');
+  const cnt8=document.getElementById('cnt8');
+  if(cnt0) cnt0.textContent=c0;
+  if(cnt2) cnt2.textContent=c2;
+  if(cnt8) cnt8.textContent=c8;
+
+  if(!showList) return; // 关闭时不渲染列表 DOM 节点
+
+  const list=document.getElementById('shapeList');
+  const notice=document.getElementById('listNotice');
+  const total=shapes.length;
+  const needLimit = total > LIST_RENDER_LIMIT;
+  const renderCount = needLimit ? LIST_RENDER_LIMIT : total;
+  if(notice){
+    if(needLimit){
+      notice.classList.remove('hidden');
+      document.getElementById('listLimit').textContent=LIST_RENDER_LIMIT;
+    } else {
+      notice.classList.add('hidden');
+    }
+  }
+
+  // 使用 DocumentFragment 减少重排
+  const frag=document.createDocumentFragment();
+  for(let i=0;i<renderCount;i++){
+    const s=shapes[i];
+    const div=document.createElement('div');
+    const col=s.color;
+    const colorStyle = col && Array.isArray(col)
+      ? `background:rgba(${col[0]},${col[1]},${col[2]},${((col[3]!=null?col[3]:255)/255)})`
+      : 'background:#3b82f6';
+    let typeName='', typeBadge='';
+    if(s.type===0){typeName='矩形';typeBadge='bg-blue-100 text-blue-700';}
+    else if(s.type===2){typeName='三角形';typeBadge='bg-purple-100 text-purple-700';}
+    else if(s.type===8){typeName='等腰三角形';typeBadge='bg-orange-100 text-orange-700';}
+    div.className=`shape-item rounded-lg px-3 py-2.5 ${i===selectedIndex?'selected':''}`;
+    let paramInfo='';
+    if(s.type===8 && s.params){
+      const [cx,cy,b,h,ang]=s.params;
+      const showAng = (invertAngle ? -ang : ang);
+      const modeTag = centerMode ? '中心' : '重心';
+      paramInfo=`<div class="text-xs text-gray-500 mt-1 font-mono">${modeTag}=(${cx},${cy}) 底=${b} 高=${h} 角=${showAng!=null?showAng.toFixed(1):'-'}°${invertAngle?' (反转)':''}</div>`;
+    } else if(s.type===0){
+      paramInfo=`<div class="text-xs text-gray-500 mt-1 font-mono">[${s.data.slice(0,2).join(',')}] → [${s.data.slice(2).join(',')}]</div>`;
+    } else {
+      paramInfo=`<div class="text-xs text-gray-500 mt-1 font-mono">3顶点</div>`;
+    }
+    div.innerHTML=`
+      <div class="flex items-center gap-2">
+        <span class="legend-dot" style="${colorStyle}"></span>
+        <span class="badge ${typeBadge}">${typeName}</span>
+        <span class="text-xs text-gray-400 ml-auto">#${i}</span>
+      </div>
+      ${paramInfo}
+    `;
+    div.onclick=()=>{selectedIndex=i;renderList();draw();};
+    frag.appendChild(div);
+  }
+  list.innerHTML='';
+  list.appendChild(frag);
+}
+
+// =============== 列表面板显隐与列宽切换 ===============
+function toggleListPanel(){
+  const left=document.getElementById('leftCol');
+  const right=document.getElementById('rightCol');
+  if(showList){
+    left.classList.remove('lg:col-span-12');
+    left.classList.add('lg:col-span-9');
+    right.classList.remove('hidden');
+  } else {
+    left.classList.remove('lg:col-span-9');
+    left.classList.add('lg:col-span-12');
+    right.classList.add('hidden');
+  }
+  // 列宽变化后需重新自适应尺寸
+  requestAnimationFrame(()=>{
+    resizeCanvas();
+  });
+}
+
+// =============== 交互 ===============
+document.getElementById('modeVertices').onclick=()=>{
+  drawMode='vertices';
+  document.getElementById('modeVertices').classList.add('active');
+  document.getElementById('modeVertices').classList.remove('text-gray-600');
+  document.getElementById('modeParams').classList.remove('active');
+  document.getElementById('modeParams').classList.add('text-gray-600');
+  draw();
+};
+document.getElementById('modeParams').onclick=()=>{
+  drawMode='params';
+  document.getElementById('modeParams').classList.add('active');
+  document.getElementById('modeParams').classList.remove('text-gray-600');
+  document.getElementById('modeVertices').classList.remove('active');
+  document.getElementById('modeVertices').classList.add('text-gray-600');
+  draw();
+};
+document.getElementById('showLabels').onchange=e=>{showLabels=e.target.checked;draw();};
+document.getElementById('showGrid').onchange=e=>{showGrid=e.target.checked;draw();};
+document.getElementById('showRect').onchange=e=>{showRect=e.target.checked;draw();};
+document.getElementById('showVertices').onchange=e=>{showVertices=e.target.checked;draw();};
+document.getElementById('showList').onchange=e=>{
+  showList=e.target.checked;
+  toggleListPanel();
+  renderList();
+};
+document.getElementById('invertAngle').onchange=e=>{
+  invertAngle=e.target.checked;
+  renderList();
+  draw();
+};
+document.getElementById('centerMode').onchange=e=>{
+  centerMode=e.target.checked;
+  renderList();
+  draw();
+};
+
+document.getElementById('zoomIn').onclick=()=>{zoom*=1.2;updateZoomLabel();draw();};
+document.getElementById('zoomOut').onclick=()=>{zoom/=1.2;updateZoomLabel();draw();};
+document.getElementById('fitView').onclick=()=>{
+  zoom=1;offsetX=0;offsetY=0;
+  computeAutoFit();
+  const btn=document.getElementById('fitView');
+  btn.style.transform='scale(0.93)';
+  setTimeout(()=>btn.style.transform='',150);
+  updateZoomLabel();draw();
+};
+function updateZoomLabel(){document.getElementById('zoomLabel').textContent=Math.round(zoom*100)+'%';}
+
+canvas.addEventListener('mousedown',e=>{
+  dragging=true;
+  dragStart={x:e.offsetX,y:e.offsetY,ox:offsetX,oy:offsetY};
+  canvas.style.cursor='grabbing';
+});
+canvas.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  offsetX=dragStart.ox+(e.offsetX-dragStart.x);
+  offsetY=dragStart.oy+(e.offsetY-dragStart.y);
+  draw();
+});
+window.addEventListener('mouseup',()=>{dragging=false;canvas.style.cursor='default';});
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const factor=e.deltaY<0?1.1:0.9;
+  const mx=e.offsetX, my=e.offsetY;
+  const wx=(mx-offsetX)/zoom, wy=(my-offsetY)/zoom;
+  zoom*=factor;
+  offsetX=mx-wx*zoom;
+  offsetY=my-wy*zoom;
+  updateZoomLabel();
+  draw();
+},{passive:false});
+
+const uploadZone=document.getElementById('uploadZone');
+const fileInput=document.getElementById('fileInput');
+uploadZone.onclick=()=>fileInput.click();
+uploadZone.ondragover=e=>{e.preventDefault();uploadZone.classList.add('dragover');};
+uploadZone.ondragleave=()=>uploadZone.classList.remove('dragover');
+uploadZone.ondrop=e=>{
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0]);
+};
+fileInput.onchange=e=>{if(e.target.files[0])loadFile(e.target.files[0]);};
+
+function loadFile(file){
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      let text=ev.target.result;
+      let data;
+      try{data=JSON.parse(text);}
+      catch{
+        data=JSON.parse('['+text.replace(/\}\s*\{/g,'},{')+']');
+      }
+      if(!Array.isArray(data))data=[data];
+      shapes=data;
+      document.getElementById('fileInfo').classList.remove('hidden');
+      document.getElementById('fileName').textContent=file.name;
+      document.getElementById('shapeCount').textContent=`· 共 ${shapes.length} 个图形`;
+      selectedIndex=-1;
+      computeAutoFit();updateZoomLabel();renderList();draw();
+    }catch(err){
+      alert('JSON 解析失败：'+err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('resetBtn').onclick=()=>{
+  shapes=JSON.parse(JSON.stringify(SAMPLE_DATA));
+  document.getElementById('fileInfo').classList.add('hidden');
+  fileInput.value='';
+  selectedIndex=-1;
+  computeAutoFit();updateZoomLabel();renderList();draw();
+};
+
+// =============== 初始化 ===============
+setTimeout(()=>{
+  resizeCanvas();
+  computeAutoFit();
+  updateZoomLabel();
+  toggleListPanel(); // 按初始 showList 状态设置布局
+  renderList();
+  draw();
+},50);
+</script>
+</body>
+</html>
+<!--08979750302395614730092106--><!--09621041442395614730092106--><!--15902122862395614730092106--><!--16068264132395614730092106--><!--16148061862395614730092106--><!--16340934392573747210092106--><!--16732026222573747210092106--><!--16835431962395614730092106--><!--16925615412573747210092106--><!--16982379332395614730092106--><!--24039843362573747210092106--><!--24123108562395614730092106--><!--24327427222573747210092106--><!--24411729242395614730092106--><!--24526405202395614730092106--><!--24625484702573747210092106--><!--25087851392395614730092106--><!--25463735002573747210092106--><!--25627331152395614730092106--><!--25746263732573747210092106--><!--25951481922573747210092106--><!--26064518682395614730092106--><!--12829870412573747210092113--><!--12891987212573747210092113--><!--12968073892573747210092113--><!--13042239232395614730092113--><!--13107326482395614730092113--><!--13347696132395614730092113--><!--13553228802573747210092113--><!--13633681622573747210092113--><!--13714126472573747210092113--><!--13798987072395614730092113--><!--13889429862395614730092113--><!--14017638592395614730092113--><!--14093026952573747210092113--><!--14158911432395614730092113--><!--14261301572395614730092113--><!--14542157462395614730092113-->
