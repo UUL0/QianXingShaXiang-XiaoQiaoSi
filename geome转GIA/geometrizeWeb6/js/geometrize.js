@@ -165,6 +165,7 @@ HxOverrides.now = function() {
 };
 var Main = function() {
 	this.targetImage = null;
+	this.currentImageName = "geometrized";  // 默认文件名
 	this.shapeJsonData = [];
 	this.shapeSvgData = [];
 	this.shapeMutationsPerStep = 100;
@@ -239,6 +240,11 @@ Main.prototype = {
 				return;
 			}
 			var file = Main.openImageFileInput.files[0];
+			var fileName = file.name;
+			// 去掉文件扩展名（如 .jpg、.png、.jpeg 等）
+			var dotIndex = fileName.lastIndexOf('.');
+			_gthis1.currentImageName = (dotIndex > 0) ? fileName.substring(0, dotIndex) : fileName;
+
 			var fileReader = new FileReader();
 			fileReader.onload = function(e) {
 				var image = new Image();
@@ -309,7 +315,7 @@ Main.prototype = {
 			saveBlob(Main.currentSvgContainer.innerHTML,"image/svg+xml;charset=utf-8","geometrized_svg.svg",Main.saveSvgButton);
 		},false);
 		Main.saveJsonButton.addEventListener("click",function(e) {
-			saveBlob("[\r\n" + _gthis1.shapeJsonData.join(",\r\n") + "\r\n]","data:text/json;charset=utf-8","geometrized_json.json",Main.saveJsonButton);
+			saveBlob("[\r\n" + _gthis1.shapeJsonData.join(",\r\n") + "\r\n]","data:text/json;charset=utf-8",_gthis1.currentImageName + ".json",Main.saveJsonButton);
 		},false);
 		var setShapeOption = function(option,enable) {
 			if(enable) {
