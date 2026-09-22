@@ -4,7 +4,9 @@ https://www.geometrize.co.uk/
 https://www.samcodes.co.uk/project/geometrize-haxe-web/
 -
 
-由geometrize-haxe-web修改增加等腰三角形选项
+一、拟合图片
+
+geometrizeWeb6由geometrize-haxe-web修改增加等腰三角形选项
 -
 进入geometrizeWeb6内：
 
@@ -15,6 +17,10 @@ npx http-server -p 8888 --mime-types .js=application/javascript
 浏览器打开：
 
 http://localhost:8888/
+
+----------------
+
+二、转换导出的JSON数据
 
 适量修改py程序文件内的参数：
 
@@ -29,6 +35,7 @@ http://localhost:8888/
 线宽=1.5
 
 
+拖放JSON到bat/cmd文件上运行输出proto文件
 
 ----------------
 
