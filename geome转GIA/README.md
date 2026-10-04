@@ -7,6 +7,7 @@ https://www.samcodes.co.uk/project/geometrize-haxe-web/
 一、拟合图片
 
 geometrizeWeb6由geometrize-haxe-web修改增加等腰三角形选项
+-（或许可以用三维模拟任意二维三角形的方法直接使用普通三角形拟合）
 -
 进入geometrizeWeb6内：
 
